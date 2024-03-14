@@ -91,17 +91,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
 
 
-
-
-
-
     case SYS_OPEN:
-      // fill arg with amount of arguments needed
-      get_args(f, &arg[0], 1);
 
-      /* Check if command line is valid.
-       * We do not want to open junk which can cause a crash
-       */
+      get_args(f, &arg[0], 1);
        validate_str((const void*)arg[0]);
 
      // get page pointer
