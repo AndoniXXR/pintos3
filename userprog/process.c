@@ -34,20 +34,28 @@ process_execute (const char * file_name)
   char *fn_copy;
   tid_t tid;
 
+  /* Make a copy of FILE_NAME.
+     Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page(0);
   if (fn_copy == NULL){
     return TID_ERROR;
   }
 
+
   strlcpy (fn_copy, file_name, PGSIZE);
+  char *saveptr;
+  file_name = strtok_r((char*)file_name, " ", &saveptr );
 
 
+  /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
 
   if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
   }
   return tid;
+
+
 }
 
 /* A thread function that loads a user process and starts it
@@ -59,7 +67,7 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
   char *saveptr;
-  //const char *sp = ' ';
+  /*constante char *sp = ' ';*/
   file_name = strtok_r ((char*)file_name, " ", &saveptr);
 
   /* Initialize interrupt frame and load executable. */
@@ -69,6 +77,13 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp, &saveptr);
 
+  if (success){
+    thread_current()->cp->load_status = LOADED;
+  }
+  else {
+    thread_current()->cp->load_status = LOAD_FAIL;
+  }
+  sema_up (&thread_current()->cp->load_sema);
 
 
   /* If load failed, quit. */
@@ -108,7 +123,7 @@ process_wait (tid_t child_tid UNUSED)
   {
     return ERROR;
   }
-  child_process_ptr->wait = 1; // set wait for child to true
+  child_process_ptr->wait = 1; /* Se establece "espera" para el proceso hijo en true */
   while (!child_process_ptr->exit)
   {
     asm volatile ("" : : : "memory");
@@ -127,14 +142,14 @@ process_exit (void)
 
   lock_acquire(&file_system_lock);
   process_close_file(CLOSE_ALL_FD);
-  /* check if current thread is an executable if so we will close it */
+  /* Comprueba si el thread actual es un ejecutable si es así lo cerraremos */
   if (cur->executable)
   {
-    file_close(cur->executable); // from file.h
+    file_close(cur->executable); /* De file.h */
   }
   lock_release(&file_system_lock);
 
-  /* free the list of child processes */
+  /* Libera la lista de procesos hijos */
   remove_all_child_processes();
 
   if (is_thread_alive(cur->parent))
@@ -274,7 +289,7 @@ load (const char *file_name, void (**eip) (void), void **esp, char **saveptr)
       printf ("load: %s: open failed\n", file_name);
       goto done;
     }
-  // since file is an executable, we want to deny write
+  /* Ya que el archivo es un ejecutable, queremos denegar la escritura */
   file_deny_write(file);
   t->executable = file;
 
@@ -500,7 +515,7 @@ setup_stack (void **esp, char **saveptr, const char *filename)
   int i, argc = 0;
   int byte_size = 0;
   int arg_size = DEFAULT_ARGV;
-  // copy command line into cont and resize to necessary size
+  /* Copia la línea de comandos en cont y la redimensióna al tamaño necesario */
   for (token = (char*)filename; token != NULL; token = strtok_r(NULL, " ", saveptr)){
     cont[argc] = token;
     argc++;
@@ -510,24 +525,24 @@ setup_stack (void **esp, char **saveptr, const char *filename)
       argv = realloc (argv, arg_size*sizeof(char*));
     }
   }
-  // copy content of cont over to argv
+  /* Copia el contenido de cont a argv */
   for (i = argc-1; i >= 0; i--){
     *esp -= strlen(cont[i])+1;
     byte_size += strlen(cont[i])+1;
     argv[i] = *esp;
     memcpy (*esp, cont[i], strlen(cont[i])+1);
   }
-  // add null
+  /* Agrega un null */
   argv[argc] = 0;
 
-  // word align by word size (4 bytes)
+  /* Alineación de palabras por tamaño de palabra (4 bytes)*/
   i = (size_t) *esp % 4;
   if (i){
     *esp -= i;
     byte_size += i;
     memcpy(*esp, &argv[argc], i );
   }
-  // push argv[i] for i = 0, 1, ..., argc
+  /* Se hace un push argv[i] for i = 0, 1, ..., argc */
   for (i = argc; i >= 0; i--){
     *esp -= sizeof(char*);
     byte_size += sizeof(char*);
@@ -535,24 +550,24 @@ setup_stack (void **esp, char **saveptr, const char *filename)
   }
 
   token = *esp;
-  // push argv
+  /* push argv */
   *esp -= sizeof (char**);
   byte_size += sizeof (char**);
   memcpy(*esp, &token, sizeof(char**));
-  // push argc
+  /* push argc */
   *esp -= sizeof (int);
   byte_size += sizeof (int);
   memcpy(*esp, &argc, sizeof(int));
-  // push fake return address
+  /* Hace un push fake al return address */
   *esp -= sizeof(void*);
   byte_size += sizeof(void*);
   memcpy(*esp, &argv[argc], sizeof (void*));
-  // free argv and cont
+  /* free argv and cont */
   free(argv);
   free(cont);
-  // hex dump to check
-  // hex_dump(0, *esp, byte_size, 1);
-  // hex_dump((int)*esp+byte_size, *esp, byte_size, 1);
+  /* hex dump para verificar */
+  /* hex_dump(0, *esp, byte_size, 1); */
+  /* hex_dump((int)*esp+byte_size, *esp, byte_size, 1); */
   return success;
 }
 
